@@ -4,7 +4,7 @@
   "private": true,
   "description": "Sample React app demonstrating @codetunezstudios/token-kit SDK integration",
   "dependencies": {
-    "@codetunezstudios/token-kit": "^0.1.0-beta.6",
+    "@codetunezstudios/token-kit": "^0.1.0-beta.7",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-scripts": "5.0.1",
