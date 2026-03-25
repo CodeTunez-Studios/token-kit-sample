@@ -19,8 +19,6 @@ export const useChat = () => {
     async (prompt: string) => {
       const { apiKey, userToken, environment, baseUrl, model, temperature, maxTokens, systemInstructions, stats } = state;
 
-      if (!apiKey || !userToken) return;
-
       // Add the user message to the chat
       const userMsg: ChatMessage = {
         id: uid(),

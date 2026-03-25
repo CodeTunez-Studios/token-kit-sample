@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
+import {
+  connectViaPortal,
+  clearStoredUserToken,
+  TokenKitConnectCancelledError,
+} from '@codetunezstudios/token-kit';
 import { useTokenKit } from '../context/TokenKitContext';
-import type { AppEnvironment } from '../context/TokenKitContext';
+import type { AppEnvironment, PortalTarget } from '../context/TokenKitContext';
+import { PORTAL_URLS } from '../context/TokenKitContext';
 import { AVAILABLE_MODELS, ModelId } from '../types';
 
 /** Sidebar form for SDK credentials and request options. */
@@ -8,24 +14,65 @@ export const ConfigPanel: React.FC = () => {
   const {
     state,
     setApiKey,
+    setClientId,
     setUserToken,
+    setPortalTarget,
+    setConnectStatus,
     setEnvironment,
     setBaseUrl,
     setModel,
-    setTemperature,
-    setMaxTokens,
     setMultiTurn,
   } = useTokenKit();
 
-  const isConfigured = state.apiKey.length > 0 && state.userToken.length > 0;
   const usingNamedEnv = state.environment !== '';
+  const isConnected = state.connectStatus === 'connected';
+  const isConnecting = state.connectStatus === 'connecting';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(state.userToken).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [state.userToken]);
+
+  const handleConnect = useCallback(async () => {
+    if (!state.clientId.trim()) {
+      alert('Enter your Client ID before connecting.');
+      return;
+    }
+    setConnectStatus('connecting');
+    try {
+      const token = await connectViaPortal({
+        clientId: state.clientId.trim(),
+        portalUrl: PORTAL_URLS[state.portalTarget],
+      });
+      setUserToken(token);
+      setConnectStatus('connected');
+    } catch (err) {
+      if (err instanceof TokenKitConnectCancelledError) {
+        // User closed the popup — silently revert to idle
+        setConnectStatus('idle');
+      } else {
+        console.error('Connect error:', err);
+        setConnectStatus('idle');
+        alert('Connection failed. Check the console for details.');
+      }
+    }
+  }, [state.clientId, state.portalTarget, setConnectStatus, setUserToken]);
+
+  const handleDisconnect = useCallback(() => {
+    clearStoredUserToken();
+    setUserToken('');
+    setConnectStatus('idle');
+  }, [setUserToken, setConnectStatus]);
 
   return (
     <div className="card">
       <h2 className="card-title">API Parameters</h2>
 
       <div className="form-group">
-        <label htmlFor="apiKey">Developer Key</label>
+        <label htmlFor="apiKey">Developer (API) Key</label>
         <input
           id="apiKey"
           type="text"
@@ -37,19 +84,22 @@ export const ConfigPanel: React.FC = () => {
       </div>
 
       <div className="form-group">
-        <label htmlFor="userToken">User Token</label>
-        <input
-          id="userToken"
-          type="text"
-          placeholder="ut_xxxxxxxx..."
-          value={state.userToken}
-          onChange={(e) => setUserToken(e.target.value)}
-          autoComplete="off"
-        />
+        <label htmlFor="model">Model</label>
+        <select
+          id="model"
+          value={state.model}
+          onChange={(e) => setModel(e.target.value as ModelId)}
+        >
+          {AVAILABLE_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label} — {m.tier}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="form-group">
-        <label htmlFor="environment">Environment</label>
+        <label htmlFor="environment">tool-kit Environment</label>
         <select
           id="environment"
           value={state.environment}
@@ -78,66 +128,104 @@ export const ConfigPanel: React.FC = () => {
       </div>
 
       <div className="form-group">
-        <label htmlFor="model">Model</label>
-        <select
-          id="model"
-          value={state.model}
-          onChange={(e) => setModel(e.target.value as ModelId)}
-        >
-          {AVAILABLE_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} — {m.tier}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="form-group">
-        <label htmlFor="temperature">Temperature: {state.temperature.toFixed(1)}</label>
+        <label htmlFor="clientId">Client ID</label>
         <input
-          id="temperature"
-          type="range"
-          min="0"
-          max="2"
-          step="0.1"
-          value={state.temperature}
-          onChange={(e) => setTemperature(parseFloat(e.target.value))}
+          id="clientId"
+          type="text"
+          placeholder="app_xxxxxxxxxxxxxxxx"
+          value={state.clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          autoComplete="off"
+          disabled={isConnected}
         />
       </div>
 
       <div className="form-group">
-        <label htmlFor="maxTokens">Max Tokens: {state.maxTokens}</label>
-        <input
-          id="maxTokens"
-          type="range"
-          min="50"
-          max="4000"
-          step="50"
-          value={state.maxTokens}
-          onChange={(e) => setMaxTokens(parseInt(e.target.value, 10))}
-        />
-      </div>
-
-      <div className="form-group">
+        <label>Multi-turn</label>
         <label className="checkbox-label">
           <input
             type="checkbox"
             checked={state.multiTurn}
             onChange={(e) => setMultiTurn(e.target.checked)}
           />
-          <span>Multi-turn</span>
+          <span>Send full conversation history each turn</span>
         </label>
-        <span className="form-hint">Send full conversation history with each request</span>
       </div>
 
-      {/* Connection indicator */}
-      <div
-        className={`connection-status ${isConfigured ? 'connected' : 'disconnected'}`}
-        style={{ marginTop: '0.875rem' }}
-      >
-        <span className="status-dot" />
-        {isConfigured ? 'Ready to send' : 'Enter credentials above'}
+      {/* ── Connect Section ────────────────────────────────── */}
+      <div className="connect-section">
+        <div className="connect-section-header">
+          <span className="card-title" style={{ margin: 0 }}>User Token</span>
+          {isConnected && (
+            <span className="connect-badge">connected</span>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="portalTarget">AI Tokens Portal</label>
+          <select
+            id="portalTarget"
+            value={state.portalTarget}
+            onChange={(e) => setPortalTarget(e.target.value as PortalTarget)}
+            disabled={isConnected}
+          >
+            <option value="production">Production — ai-tokens.me</option>
+            <option value="local">Local</option>
+          </select>
+        </div>
+
+        {isConnected ? (
+          <>
+            <div className="connect-token-row">
+              <span className="connect-token-preview" title={state.userToken}>
+                {state.userToken.slice(0, 14)}••••
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleCopy}
+                title="Copy full token"
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-block"
+              style={{ marginTop: '0.5rem' }}
+              onClick={handleDisconnect}
+            >
+              Disconnect
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-accent btn-block"
+            style={{ marginTop: '0.75rem' }}
+            onClick={handleConnect}
+            disabled={isConnecting || !state.clientId.trim()}
+          >
+            {isConnecting ? 'Opening portal…' : 'Connect via portal'}
+          </button>
+        )}
+
+        {/* Manual override — useful when a token is already known */}
+        {!isConnected && (
+          <div className="form-group" style={{ marginTop: '0.5rem' }}>
+            <label htmlFor="userToken">Or paste user token manually</label>
+            <input
+              id="userToken"
+              type="text"
+              placeholder="ut_xxxxxxxx..."
+              value={state.userToken}
+              onChange={(e) => setUserToken(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+        )}
       </div>
+
     </div>
   );
 };

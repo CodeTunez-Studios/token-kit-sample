@@ -6,16 +6,34 @@
  * directly into your own app.
  */
 
-import React, { createContext, useContext, useReducer, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, ReactNode, useEffect } from 'react';
+import { getStoredUserToken } from '@codetunezstudios/token-kit';
 import type { ChatMessage, SessionStats, ModelId } from '../types';
 
 export type AppEnvironment = '' | 'production' | 'staging' | 'development';
 
+/** Which ai-tokens.me instance the connect popup will open. */
+export type PortalTarget = 'production' | 'local';
+
+export const PORTAL_URLS: Record<PortalTarget, string> = {
+  production: 'https://ai-tokens.me',
+  local: 'http://localhost:3001',
+};
+
+/** Status of the portal connect popup flow. */
+export type ConnectStatus = 'idle' | 'connecting' | 'connected';
+
 interface State {
   /** Developer API key */
   apiKey: string;
+  /** App clientId — used with connectViaPortal({ clientId }) */
+  clientId: string;
   /** End-user token */
   userToken: string;
+  /** Which portal to open for the connect flow */
+  portalTarget: PortalTarget;
+  /** Status of the connect popup flow */
+  connectStatus: ConnectStatus;
   /**
    * Named environment shorthand passed to the SDK.
    * Empty string means "default" — baseUrl is used instead.
@@ -55,7 +73,10 @@ const initialStats: SessionStats = {
 
 const initialState: State = {
   apiKey: '',
+  clientId: '',
   userToken: '',
+  portalTarget: 'production',
+  connectStatus: 'idle',
   environment: '',
   baseUrl: '',
   model: 'gpt-4o-mini',
@@ -70,7 +91,10 @@ const initialState: State = {
 
 type Action =
   | { type: 'SET_API_KEY'; payload: string }
+  | { type: 'SET_CLIENT_ID'; payload: string }
   | { type: 'SET_USER_TOKEN'; payload: string }
+  | { type: 'SET_PORTAL_TARGET'; payload: PortalTarget }
+  | { type: 'SET_CONNECT_STATUS'; payload: ConnectStatus }
   | { type: 'SET_ENVIRONMENT'; payload: AppEnvironment }
   | { type: 'SET_BASE_URL'; payload: string }
   | { type: 'SET_MODEL'; payload: ModelId }
@@ -87,8 +111,14 @@ function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'SET_API_KEY':
       return { ...state, apiKey: action.payload };
+    case 'SET_CLIENT_ID':
+      return { ...state, clientId: action.payload };
     case 'SET_USER_TOKEN':
       return { ...state, userToken: action.payload };
+    case 'SET_PORTAL_TARGET':
+      return { ...state, portalTarget: action.payload };
+    case 'SET_CONNECT_STATUS':
+      return { ...state, connectStatus: action.payload };
     case 'SET_ENVIRONMENT':
       return { ...state, environment: action.payload };
     case 'SET_BASE_URL':
@@ -119,7 +149,10 @@ function reducer(state: State, action: Action): State {
 interface TokenKitContextValue {
   state: State;
   setApiKey: (key: string) => void;
+  setClientId: (id: string) => void;
   setUserToken: (token: string) => void;
+  setPortalTarget: (target: PortalTarget) => void;
+  setConnectStatus: (status: ConnectStatus) => void;
   setEnvironment: (env: AppEnvironment) => void;
   setBaseUrl: (url: string) => void;
   setModel: (model: ModelId) => void;
@@ -138,8 +171,20 @@ const TokenKitContext = createContext<TokenKitContextValue | null>(null);
 export const TokenKitProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
 
+  // Restore a previously connected user token from localStorage on mount
+  useEffect(() => {
+    const stored = getStoredUserToken();
+    if (stored) {
+      dispatch({ type: 'SET_USER_TOKEN', payload: stored });
+      dispatch({ type: 'SET_CONNECT_STATUS', payload: 'connected' });
+    }
+  }, []);
+
   const setApiKey = useCallback((key: string) => dispatch({ type: 'SET_API_KEY', payload: key }), []);
+  const setClientId = useCallback((id: string) => dispatch({ type: 'SET_CLIENT_ID', payload: id }), []);
   const setUserToken = useCallback((token: string) => dispatch({ type: 'SET_USER_TOKEN', payload: token }), []);
+  const setPortalTarget = useCallback((target: PortalTarget) => dispatch({ type: 'SET_PORTAL_TARGET', payload: target }), []);
+  const setConnectStatus = useCallback((status: ConnectStatus) => dispatch({ type: 'SET_CONNECT_STATUS', payload: status }), []);
   const setEnvironment = useCallback((env: AppEnvironment) => dispatch({ type: 'SET_ENVIRONMENT', payload: env }), []);
   const setBaseUrl = useCallback((url: string) => dispatch({ type: 'SET_BASE_URL', payload: url }), []);
   const setModel = useCallback((model: ModelId) => dispatch({ type: 'SET_MODEL', payload: model }), []);
@@ -155,7 +200,10 @@ export const TokenKitProvider: React.FC<{ children: ReactNode }> = ({ children }
   const value: TokenKitContextValue = {
     state,
     setApiKey,
+    setClientId,
     setUserToken,
+    setPortalTarget,
+    setConnectStatus,
     setEnvironment,
     setBaseUrl,
     setModel,

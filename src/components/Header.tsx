@@ -7,7 +7,7 @@ export const Header: React.FC = () => (
   <header className="header">
     <div className="header-brand">
       <h1>token-kit</h1>
-      <span>sample app</span>
+      <span>chat sample app</span>
     </div>
     <nav className="header-links">
       <a

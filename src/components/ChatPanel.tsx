@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useTokenKit } from '../context/TokenKitContext';
 import { useChat } from '../hooks/useChat';
 
+
 type Tab = 'chat' | 'system';
 
 /**
@@ -11,14 +12,13 @@ type Tab = 'chat' | 'system';
  * "System Instructions" tab: free-text system prompt sent with every request.
  */
 export const ChatPanel: React.FC = () => {
-  const { state, clearChat, setSystemInstructions } = useTokenKit();
+  const { state, clearChat, setSystemInstructions, setTemperature, setMaxTokens } = useTokenKit();
   const { sendMessage, loading } = useChat();
   const [input, setInput] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  const isConfigured = state.apiKey.length > 0 && state.userToken.length > 0;
-  const canSend = isConfigured && input.trim().length > 0 && !loading;
+  const canSend = input.trim().length > 0 && !loading;
 
   // Always scroll to bottom when messages change
   useEffect(() => {
@@ -65,8 +65,8 @@ export const ChatPanel: React.FC = () => {
           {state.messages.length === 0 ? (
             <div className="chat-empty">
               <p>
-                Configure your credentials in the sidebar, then type a message to
-                start chatting with the LLM via token-kit.
+                Type a message below to start chatting. Any SDK or configuration
+                errors will appear here as error messages.
               </p>
             </div>
           ) : (
@@ -116,8 +116,8 @@ export const ChatPanel: React.FC = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isConfigured ? 'Prompt (Enter to send)' : 'Configure credentials first'}
-              disabled={!isConfigured || loading}
+              placeholder="Prompt (Enter to send)"
+              disabled={loading}
               rows={1}
             />
             <div className="chat-input-area-buttons">
@@ -136,6 +136,36 @@ export const ChatPanel: React.FC = () => {
               >
                 Clear
               </button>
+            </div>
+          </div>
+
+          {/* Per-request model params */}
+          <div className="chat-params-row">
+            <div className="chat-param">
+              <span className="chat-param-label">Temp</span>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={state.temperature}
+                onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                title={`Temperature: ${state.temperature.toFixed(1)}`}
+              />
+              <span className="chat-param-value">{state.temperature.toFixed(1)}</span>
+            </div>
+            <div className="chat-param">
+              <span className="chat-param-label">Max&nbsp;Tokens</span>
+              <input
+                type="range"
+                min="50"
+                max="4000"
+                step="50"
+                value={state.maxTokens}
+                onChange={(e) => setMaxTokens(parseInt(e.target.value, 10))}
+                title={`Max tokens: ${state.maxTokens}`}
+              />
+              <span className="chat-param-value">{state.maxTokens}</span>
             </div>
           </div>
         </>
